@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timer da Tocha - Shadowdark (Minimalista P&B)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .timer-text-animation {
+            animation: pulseText 0.5s ease-out;
+        }
+        @keyframes pulseText {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        /* Scrollbar customizada para tema escuro P&B */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000000; /* black */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #404040; /* neutral-700 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #525252; /* neutral-600 */
+        }
+    </style>
+</head>
+<body class="bg-black text-white flex flex-col items-center justify-center min-h-screen p-4 selection:bg-white selection:text-black">
+
+    <div class="bg-black border border-neutral-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-500 hover:shadow-[0_0_15px_5px_rgba(255,255,255,0.1)]">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl sm:text-4xl font-bold text-white">Timer da Tocha 🔥</h1>
+            <p class="text-neutral-400 text-sm">A escuridão se aproxima...</p>
+        </header>
+
+        <div id="timerDisplay" class="text-6xl sm:text-7xl font-mono text-center mb-4 text-white transition-colors duration-300">
+            01:00:00
+        </div>
+
+        <div class="w-full bg-neutral-800 rounded-full h-4 mb-6 overflow-hidden shadow-inner">
+            <div id="progressBar" class="bg-white h-4 rounded-full transition-all duration-500 ease-linear" style="width: 100%;">
+                </div>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-3 mb-6">
+            <button id="addTenMinutesBtn" class="bg-black text-white border border-neutral-700 hover:bg-neutral-800 font-semibold py-2.5 px-4 rounded-lg shadow-md transform transition-all duration-150 ease-in-out active:scale-95 text-sm">
+                +10 Min
+            </button>
+            <button id="subtractTenMinutesBtn" class="bg-black text-white border border-neutral-700 hover:bg-neutral-800 font-semibold py-2.5 px-4 rounded-lg shadow-md transform transition-all duration-150 ease-in-out active:scale-95 text-sm">
+                -10 Min
+            </button>
+            <button id="addOneMinuteBtn" class="bg-black text-white border border-neutral-700 hover:bg-neutral-800 font-semibold py-2.5 px-4 rounded-lg shadow-md transform transition-all duration-150 ease-in-out active:scale-95 text-sm">
+                +1 Min
+            </button>
+            <button id="subtractOneMinuteBtn" class="bg-black text-white border border-neutral-700 hover:bg-neutral-800 font-semibold py-2.5 px-4 rounded-lg shadow-md transform transition-all duration-150 ease-in-out active:scale-95 text-sm">
+                -1 Min
+            </button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
+            <button id="startPauseBtn" class="flex-1 bg-white text-black font-bold py-3 px-6 rounded-lg shadow-lg transform transition-all duration-150 ease-in-out active:scale-95 text-base">
+                Iniciar
+            </button>
+            <button id="resetBtn" class="flex-1 bg-black text-white border border-neutral-700 hover:bg-neutral-800 font-semibold py-3 px-6 rounded-lg shadow-md transform transition-all duration-150 ease-in-out active:scale-95 text-base">
+                Resetar
+            </button>
+        </div>
+    </div>
+
+    <footer class="mt-8 text-center text-neutral-500 text-xs">
+        <p>Criado para Shadowdark RPG. Que seus dados rolem alto!</p>
+    </footer>
+
+    <audio id="alarmSound" src="https://www.soundjay.com/buttons/sounds/button-3.mp3" preload="auto"></audio> 
+    <script>
+        // --- Constantes e Configurações ---
+        const DEFAULT_DURATION_SECONDS = 3600; // 1 hora
+        const MINIMUM_DURATION_SECONDS = 60;  // 1 minuto
+        const TIME_MODIFICATION_TEN_MINUTES_SECONDS = 600; // 10 minutos
+        const TIME_MODIFICATION_ONE_MINUTE_SECONDS = 60; // 1 minuto
+
+        // --- Elementos do DOM ---
+        const timerDisplay = document.getElementById('timerDisplay');
+        const progressBar = document.getElementById('progressBar');
+        const startPauseBtn = document.getElementById('startPauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const addTenMinutesBtn = document.getElementById('addTenMinutesBtn');
+        const subtractTenMinutesBtn = document.getElementById('subtractTenMinutesBtn');
+        const addOneMinuteBtn = document.getElementById('addOneMinuteBtn');
+        const subtractOneMinuteBtn = document.getElementById('subtractOneMinuteBtn');
+        const alarmSound = document.getElementById('alarmSound');
+
+        // --- Variáveis de Estado do Timer ---
+        let timerInterval = null;
+        let isTimerRunning = false;
+        let remainingSeconds = DEFAULT_DURATION_SECONDS;
+        let currentSetDuration = DEFAULT_DURATION_SECONDS; // Esta será a duração que o reset usará, a menos que seja explicitamente resetada para DEFAULT_DURATION_SECONDS
+        let targetEndTime = 0;
+
+        // --- Funções Auxiliares ---
+        function formatTime(totalSeconds) {
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function updateDisplayAndProgress() {
+            timerDisplay.textContent = formatTime(remainingSeconds);
+            timerDisplay.classList.add('timer-text-animation');
+            setTimeout(() => timerDisplay.classList.remove('timer-text-animation'), 500);
+
+            const progressPercentage = Math.max(0, (remainingSeconds / currentSetDuration) * 100);
+            progressBar.style.width = `${progressPercentage}%`;
+            
+            if (remainingSeconds <= 0) {
+                progressBar.classList.remove('bg-white');
+                progressBar.classList.add('bg-neutral-600');
+                timerDisplay.classList.remove('text-white');
+                timerDisplay.classList.add('text-neutral-400');
+            } else if (remainingSeconds < currentSetDuration * 0.2) {
+                progressBar.classList.remove('bg-white');
+                progressBar.classList.add('bg-neutral-300');
+                timerDisplay.classList.remove('text-white');
+                timerDisplay.classList.add('text-neutral-200'); 
+            } else {
+                progressBar.classList.add('bg-white');
+                progressBar.classList.remove('bg-neutral-300', 'bg-neutral-600');
+                timerDisplay.classList.add('text-white');
+                timerDisplay.classList.remove('text-neutral-200', 'text-neutral-400');
+            }
+        }
+
+        // --- Funções Principais do Timer ---
+        function tick() {
+            remainingSeconds--;
+            updateDisplayAndProgress();
+
+            if (remainingSeconds <= 0) {
+                pauseTimerLogic(); // Para o intervalo do timer, mas não o som ainda
+                remainingSeconds = 0; 
+                updateDisplayAndProgress();
+                
+                alarmSound.loop = true; // Configura o som para repetir
+                alarmSound.play().catch(error => console.error("Erro ao tocar o som do alarme:", error));
+                
+                // Mantém o botão como "Pausar" ou "Continuar" se o som estiver tocando,
+                // ou "Iniciar" se já foi resetado e o som parou.
+                // A lógica de reset tratará de mudar para "Iniciar".
+                // A estilização do botão de pausa/play é tratada em pauseTimerLogic e startTimerLogic
+            }
+        }
+
+        function startTimerLogic() {
+            if (isTimerRunning) return;
+
+            // Se o alarme estiver tocando em loop, pare-o antes de iniciar/continuar o timer
+            if (alarmSound.loop) {
+                alarmSound.loop = false;
+                alarmSound.pause();
+                if (alarmSound.currentTime > 0) { // Reseta o tempo do áudio para o início
+                    alarmSound.currentTime = 0;
+                }
+            }
+
+            if (remainingSeconds <= 0) { // Se o tempo acabou e está iniciando de novo
+                remainingSeconds = currentSetDuration; // Começa com a duração configurada
+            }
+            
+            isTimerRunning = true;
+            targetEndTime = Date.now() + remainingSeconds * 1000;
+            
+            localStorage.setItem('torchTimer_isRunning_bw', 'true');
+            localStorage.setItem('torchTimer_targetEndTime_bw', targetEndTime);
+            localStorage.removeItem('torchTimer_remainingOnPause_bw');
+
+            timerInterval = setInterval(tick, 1000);
+            
+            startPauseBtn.textContent = 'Pausar';
+            startPauseBtn.classList.remove('bg-white', 'text-black');
+            startPauseBtn.classList.add('bg-neutral-700', 'text-white');
+            
+            updateDisplayAndProgress();
+        }
+
+        function pauseTimerLogic() {
+            // Não para o som aqui, pois ele pode estar em loop intencionalmente
+            // O som só será parado no reset ou ao iniciar o timer novamente.
+            if (!isTimerRunning && timerInterval === null) return; 
+
+            isTimerRunning = false;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            
+            localStorage.setItem('torchTimer_isRunning_bw', 'false');
+            localStorage.setItem('torchTimer_remainingOnPause_bw', remainingSeconds);
+            localStorage.removeItem('torchTimer_targetEndTime_bw');
+            
+            // Só muda para "Continuar" se o tempo não tiver acabado e o som não estiver em loop
+            if (remainingSeconds > 0 && !alarmSound.loop) {
+                 startPauseBtn.textContent = 'Continuar';
+                 startPauseBtn.classList.remove('bg-neutral-700', 'text-white');
+                 startPauseBtn.classList.add('bg-white', 'text-black');
+            } else if (remainingSeconds <= 0 && !alarmSound.loop) { // Se o tempo acabou e o som não está em loop (ex: após reset)
+                startPauseBtn.textContent = 'Iniciar';
+                startPauseBtn.classList.remove('bg-neutral-700', 'text-white');
+                startPauseBtn.classList.add('bg-white', 'text-black');
+            }
+            // Se o som estiver em loop, o botão de start/pause não deve mudar de "Pausar"
+            // até que o timer seja resetado ou iniciado novamente.
+        }
+
+        function resetTimerLogic() {
+            pauseTimerLogic(); // Para o intervalo do timer
+
+            // Para o som do alarme e desativa o loop
+            alarmSound.loop = false;
+            alarmSound.pause();
+            if (alarmSound.currentTime > 0) { // Reseta o tempo do áudio para o início
+                 alarmSound.currentTime = 0;
+            }
+
+            // Define a duração e o tempo restante para 1 hora (DEFAULT_DURATION_SECONDS)
+            currentSetDuration = DEFAULT_DURATION_SECONDS;
+            remainingSeconds = DEFAULT_DURATION_SECONDS; 
+            
+            // Atualiza o localStorage com os valores de reset
+            localStorage.setItem('torchTimer_setDuration_bw', currentSetDuration); 
+            localStorage.setItem('torchTimer_remainingOnPause_bw', remainingSeconds); 
+            localStorage.removeItem('torchTimer_targetEndTime_bw'); 
+            localStorage.setItem('torchTimer_isRunning_bw', 'false'); 
+            
+            startPauseBtn.textContent = 'Iniciar';
+            startPauseBtn.classList.remove('bg-neutral-700', 'text-white');
+            startPauseBtn.classList.add('bg-white', 'text-black');
+            updateDisplayAndProgress(); 
+        }
+
+        function modifyTimeLogic(timeDeltaInSeconds) {
+            const previousSetDuration = currentSetDuration;
+            // Modifica currentSetDuration, que é a base para o tempo restante e reset (antes da nova regra de reset)
+            currentSetDuration = Math.max(MINIMUM_DURATION_SECONDS, currentSetDuration + timeDeltaInSeconds);
+            localStorage.setItem('torchTimer_setDuration_bw', currentSetDuration);
+
+            const actualDurationChange = currentSetDuration - previousSetDuration;
+
+            if (isTimerRunning) {
+                remainingSeconds = Math.max(0, remainingSeconds + actualDurationChange);
+                targetEndTime = Date.now() + remainingSeconds * 1000;
+                localStorage.setItem('torchTimer_targetEndTime_bw', targetEndTime);
+            } else {
+                // Se não estiver rodando, apenas ajusta o tempo restante
+                // Se o tempo estava em 0, e adicionou, remainingSeconds reflete isso
+                remainingSeconds = Math.max(0, remainingSeconds + actualDurationChange);
+                localStorage.setItem('torchTimer_remainingOnPause_bw', remainingSeconds);
+                
+                // Se adicionou tempo e estava em "Iniciar" (e não em loop de alarme), muda para "Continuar"
+                if (remainingSeconds > 0 && startPauseBtn.textContent === 'Iniciar' && !alarmSound.loop){
+                    startPauseBtn.textContent = 'Continuar';
+                    startPauseBtn.classList.remove('bg-neutral-700', 'text-white');
+                    startPauseBtn.classList.add('bg-white', 'text-black');
+                }
+            }
+             if (remainingSeconds > 0 && !isTimerRunning && startPauseBtn.textContent === 'Iniciar' && !alarmSound.loop) {
+                startPauseBtn.textContent = 'Continuar';
+            }
+            updateDisplayAndProgress();
+        }
+
+        function loadStateFromLocalStorage() {
+            // Carrega a última duração configurada pelo usuário (antes da regra de reset para 1h)
+            // Esta 'setDuration' ainda é útil se o usuário modificar o tempo e recarregar a página ANTES de resetar.
+            const savedSetDuration = parseInt(localStorage.getItem('torchTimer_setDuration_bw'));
+            if (!isNaN(savedSetDuration) && savedSetDuration >= MINIMUM_DURATION_SECONDS) {
+                currentSetDuration = savedSetDuration;
+            } else {
+                currentSetDuration = DEFAULT_DURATION_SECONDS; 
+                localStorage.setItem('torchTimer_setDuration_bw', currentSetDuration); 
+            }
+
+            const savedIsRunning = localStorage.getItem('torchTimer_isRunning_bw') === 'true';
+            
+            if (savedIsRunning) {
+                const savedTargetEndTime = parseInt(localStorage.getItem('torchTimer_targetEndTime_bw'));
+                if (savedTargetEndTime && !isNaN(savedTargetEndTime)) {
+                    const newRemainingSeconds = Math.max(0, Math.floor((savedTargetEndTime - Date.now()) / 1000));
+                    remainingSeconds = newRemainingSeconds;
+                    
+                    if (remainingSeconds > 0) {
+                        isTimerRunning = false; 
+                        startTimerLogic(); 
+                    } else { // O tempo acabou enquanto a página estava fechada
+                        remainingSeconds = 0;
+                        isTimerRunning = false; 
+                        // Não chama pauseTimerLogic aqui para não mudar o botão se o alarme deveria estar tocando
+                        updateDisplayAndProgress(); // Atualiza para 00:00:00
+                        
+                        alarmSound.loop = true; // Configura para loop
+                        alarmSound.play().catch(error => console.error("Erro ao tocar o som do alarme offline:", error));
+                        // O botão startPauseBtn deve permanecer como "Pausar" ou o que startTimerLogic definiria se fosse chamado
+                        // No entanto, como o tempo acabou, startTimerLogic não será chamado.
+                        // Precisamos garantir que o botão reflita o estado de "tempo esgotado, alarme tocando".
+                        // A lógica em tick() lida com o botão quando o tempo acaba ativamente.
+                        // Aqui, como foi offline, o botão pode estar como "Pausar".
+                        startPauseBtn.textContent = 'Pausar'; // Ou o que for apropriado para "alarme tocando"
+                        startPauseBtn.classList.remove('bg-white', 'text-black');
+                        startPauseBtn.classList.add('bg-neutral-700', 'text-white');
+
+                    }
+                } else { 
+                    isTimerRunning = false;
+                    remainingSeconds = currentSetDuration; // Usa a duração carregada
+                    localStorage.setItem('torchTimer_remainingOnPause_bw', remainingSeconds);
+                    localStorage.setItem('torchTimer_isRunning_bw', 'false');
+                }
+            } else { 
+                const savedRemainingOnPause = parseInt(localStorage.getItem('torchTimer_remainingOnPause_bw'));
+                if (!isNaN(savedRemainingOnPause) && savedRemainingOnPause >= 0) {
+                    remainingSeconds = savedRemainingOnPause;
+                } else {
+                    remainingSeconds = currentSetDuration; // Usa a duração carregada
+                    localStorage.setItem('torchTimer_remainingOnPause_bw', remainingSeconds);
+                }
+                
+                 if (remainingSeconds > 0 && remainingSeconds < currentSetDuration) {
+                    startPauseBtn.textContent = 'Continuar';
+                } else if (remainingSeconds === 0) {
+                    startPauseBtn.textContent = 'Iniciar';
+                } else { 
+                    startPauseBtn.textContent = 'Iniciar';
+                }
+                if(startPauseBtn.textContent === 'Continuar' || startPauseBtn.textContent === 'Iniciar'){
+                    startPauseBtn.classList.remove('bg-neutral-700', 'text-white');
+                    startPauseBtn.classList.add('bg-white', 'text-black');
+                } else { 
+                    startPauseBtn.classList.remove('bg-white', 'text-black');
+                    startPauseBtn.classList.add('bg-neutral-700', 'text-white');
+                }
+            }
+            updateDisplayAndProgress(); 
+        }
+
+        startPauseBtn.addEventListener('click', () => {
+            if (isTimerRunning) {
+                pauseTimerLogic();
+            } else {
+                startTimerLogic();
+            }
+        });
+
+        resetBtn.addEventListener('click', resetTimerLogic);
+
+        addTenMinutesBtn.addEventListener('click', () => {
+            modifyTimeLogic(TIME_MODIFICATION_TEN_MINUTES_SECONDS);
+        });
+
+        subtractTenMinutesBtn.addEventListener('click', () => {
+            modifyTimeLogic(-TIME_MODIFICATION_TEN_MINUTES_SECONDS);
+        });
+
+        addOneMinuteBtn.addEventListener('click', () => {
+            modifyTimeLogic(TIME_MODIFICATION_ONE_MINUTE_SECONDS);
+        });
+
+        subtractOneMinuteBtn.addEventListener('click', () => {
+            modifyTimeLogic(-TIME_MODIFICATION_ONE_MINUTE_SECONDS);
+        });
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStateFromLocalStorage();
+        });
+
+    </script>
+</body>
+</html>
